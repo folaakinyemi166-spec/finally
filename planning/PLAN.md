@@ -137,7 +137,7 @@ LLM_MOCK=false
 - If `MASSIVE_API_KEY` is set and non-empty → backend uses Massive REST API for market data
 - If `MASSIVE_API_KEY` is absent or empty → backend uses the built-in market simulator
 - If `LLM_MOCK=true` → backend returns deterministic mock LLM responses (for E2E tests)
-- The backend reads `.env` from the project root (mounted into the container or read via docker `--env-file`)
+- The backend reads `.env` via `docker run --env-file .env` (see §11) — the file itself is not bind-mounted or baked into the image
 
 ---
 
@@ -175,7 +175,8 @@ Both the simulator and the Massive client implement the same abstract interface.
 
 - Endpoint: `GET /api/stream/prices`
 - Long-lived SSE connection; client uses native `EventSource` API
-- Server pushes price updates for all tickers known to the system at a regular cadence (~500ms) — in the single-user model this is equivalent to the user's watchlist
+- The cache keeps a version counter per ticker; on each ~500ms tick, the server pushes an event only for tickers whose price changed since the last tick (delta, not a full snapshot) — payload size tracks actual price movement, not watchlist size
+- "Tickers known to the system" is equivalent to the user's watchlist in the single-user model
 - Each SSE event contains ticker, price, previous price, timestamp, and change direction
 - Client handles reconnection automatically (EventSource has built-in retry)
 
@@ -206,6 +207,7 @@ All tables include a `user_id` column defaulting to `"default"`. This is hardcod
 - `ticker` TEXT
 - `added_at` TEXT (ISO timestamp)
 - UNIQUE constraint on `(user_id, ticker)`
+- Soft cap: 30 tickers per user, enforced at the API layer for both manual and LLM-driven adds — keeps the Massive free-tier poll and SSE tick payloads bounded
 
 **positions** — Current holdings (one row per ticker per user)
 - `id` TEXT PRIMARY KEY (UUID)
@@ -225,7 +227,7 @@ All tables include a `user_id` column defaulting to `"default"`. This is hardcod
 - `price` REAL
 - `executed_at` TEXT (ISO timestamp)
 
-**portfolio_snapshots** — Portfolio value over time (for P&L chart). Recorded every 30 seconds by a background task, and immediately after each trade execution.
+**portfolio_snapshots** — Portfolio value over time (for P&L chart). Recorded immediately after each trade execution, and opportunistically every 60 seconds piggybacked on the existing market-data background loop (§6) rather than a second scheduled task — idle periods with no price movement don't need a dedicated timer.
 - `id` TEXT PRIMARY KEY (UUID)
 - `user_id` TEXT (default: `"default"`)
 - `total_value` REAL
@@ -260,12 +262,16 @@ All tables include a `user_id` column defaulting to `"default"`. This is hardcod
 | POST | `/api/portfolio/trade` | Execute a trade: `{ticker, quantity, side}` |
 | GET | `/api/portfolio/history` | Portfolio value snapshots over time (for P&L chart) |
 
+`POST /api/portfolio/trade` fills at the current price in the shared price cache (§6) for `ticker`; if the ticker has no cached price yet (not on the watchlist, or the cache hasn't ticked since startup), the trade is rejected with an error rather than queued. `quantity` must be a positive, finite value with a minimum increment of 0.0001 shares — malformed or out-of-range values (including LLM-hallucinated ones, e.g. `1e30`) are rejected by the same validation path whether the trade originates from the trade bar or the chat flow (§9).
+
 ### Watchlist
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/watchlist` | Current watchlist tickers with latest prices |
 | POST | `/api/watchlist` | Add a ticker: `{ticker}` |
 | DELETE | `/api/watchlist/{ticker}` | Remove a ticker |
+
+`GET /api/watchlist` joins the `watchlist` table with the shared price cache (§6) — it does not fetch prices itself. A ticker just added, before the next simulator tick or Massive poll, returns with `price: null` until the cache has a value. `POST /api/watchlist` enforces the 30-ticker cap (§7) and returns a clear validation error for duplicates rather than a raw DB constraint failure.
 
 ### Chat
 | Method | Path | Description |
@@ -290,13 +296,12 @@ There is an OPENROUTER_API_KEY in the .env file in the project root.
 When the user sends a chat message, the backend:
 
 1. Loads the user's current portfolio context (cash, positions with P&L, watchlist with live prices, total portfolio value)
-2. Loads recent conversation history from the `chat_messages` table
+2. Loads the last 20 messages (10 user/assistant turns) from the `chat_messages` table — enough for coherent follow-ups without unbounded context growth
 3. Constructs a prompt with a system message, portfolio context, conversation history, and the user's new message
 4. Calls the LLM via LiteLLM → OpenRouter, requesting structured output, using the cerebras-inference skill
-5. Parses the complete structured JSON response
-6. Auto-executes any trades or watchlist changes specified in the response
-7. Stores the message and executed actions in `chat_messages`
-8. Returns the complete JSON response to the frontend (no token-by-token streaming — Cerebras inference is fast enough that a loading indicator is sufficient)
+5. Parses the complete structured JSON response — structured output only guarantees the JSON *shape* matches the schema below, not that trades/watchlist changes are valid
+6. Auto-executes any trades or watchlist changes, running each through the same business validation as manual trades (§8: sufficient cash/shares, valid quantity, ticker has a cached price), then stores the user message, assistant message, and the resulting per-action success/failure in a single `chat_messages` write
+7. Returns the complete JSON response, including any per-action errors, to the frontend (no token-by-token streaming — Cerebras inference is fast enough that a loading indicator is sufficient)
 
 ### Structured Output Schema
 
@@ -393,13 +398,13 @@ FastAPI serves the static frontend files and all API routes on port 8000.
 
 ### Docker Volume
 
-The SQLite database persists via a named Docker volume:
+The SQLite database persists via a bind mount to the project's `db/` directory (§4), so `db/finally.db` is visible on the host — not a named Docker volume, which would hide the file inside Docker's internal storage:
 
 ```bash
-docker run -v finally-data:/app/db -p 8000:8000 --env-file .env finally
+docker run -v $(pwd)/db:/app/db -p 8000:8000 --env-file .env finally
 ```
 
-The `db/` directory in the project root maps to `/app/db` in the container. The backend writes `finally.db` to this path.
+The backend writes `finally.db` to `/app/db` inside the container, which resolves to `db/finally.db` on the host.
 
 ### Start/Stop Scripts
 
@@ -414,6 +419,8 @@ The `db/` directory in the project root maps to `/app/db` in the container. The 
 - Does NOT remove the volume (data persists)
 
 **`scripts/start_windows.ps1`** / **`scripts/stop_windows.ps1`**: PowerShell equivalents for Windows.
+
+These wrap `docker run` directly, rather than delegating to `docker-compose.yml`, so students can see the exact command being run; `docker-compose.yml` remains available as an optional one-line alternative (§4).
 
 All scripts should be idempotent — safe to run multiple times.
 
@@ -454,3 +461,9 @@ The container is designed to deploy to AWS App Runner, Render, or any container 
 - Portfolio visualization: heatmap renders with correct colors, P&L chart has data points
 - AI chat (mocked): send a message, receive a response, trade execution appears inline
 - SSE resilience: disconnect and verify reconnection
+
+---
+
+## 13. Changelog
+
+- **2026-07-03**: Incorporated the 2026-07-01 review findings directly into the relevant sections: watchlist/trade price-cache semantics (§8), quantity validation (§8, §9), structured-output vs. business validation split (§9), a defined chat history window of 20 messages (§9), delta-only SSE payloads (§6), a 30-ticker watchlist soft cap (§7), snapshot cadence folded into the market-data loop instead of a separate 30s timer (§7), bind-mount-consistent Docker volume example (§11), a single `.env` loading mechanism (§5), and a rationale note for the OS-native start/stop scripts (§11).
