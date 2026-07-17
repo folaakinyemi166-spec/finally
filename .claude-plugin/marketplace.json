@@ -1,0 +1,20 @@
+{
+    "name": "fola-tools",
+    "owner": {
+        "name": "Fola",
+        "email": "f_akinyemi@yahoo.com"
+
+    },
+    "plugins":[
+        {
+            "name": "independent-reviewer",
+            "source": "./independent-reviewer",
+            "description":  "Carry out an independent review of all changes since last commit",
+            "version": "1.0.0",
+            "author": {
+                "name": "Fola"
+            }
+              
+        }
+    ]
+}
