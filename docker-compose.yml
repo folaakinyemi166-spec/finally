@@ -1,0 +1,19 @@
+# Optional convenience wrapper around `docker build` / `docker run` (PLAN.md
+# §11). The start/stop scripts in scripts/ are the primary, OS-native way to
+# run FinAlly; this is a one-line alternative for anyone who prefers Compose.
+#
+#   docker compose up --build
+#   docker compose down
+
+services:
+  finally:
+    build: .
+    image: finally:latest
+    container_name: finally
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./db:/app/db
+    env_file:
+      - .env
+    restart: unless-stopped

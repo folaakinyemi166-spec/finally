@@ -2,14 +2,10 @@
 
 ## Findings
 
-- High: [`/Users/sfoa6558/pm/finally/.claude/settings.json`](../.claude/settings.json#L2-L15) and [`/Users/sfoa6558/pm/finally/Independent-reviewer/.claude-plugin/hooks/hooks.json`](../Independent-reviewer/.claude-plugin/hooks/hooks.json#L2-L18) both register the same `Stop` hook that runs `codex exec "Review changes since last commit and write results to a file named planning/REVIEW.md"`. If both config sources are loaded, each stop event can launch multiple review jobs, and the nested Codex session will re-trigger the same hook when it exits. Keep the hook in one place or disable hooks for the nested invocation.
+- High: [`app/market/stream.py`](/Users/sfoa6558/pm/finally/backend/app/market/stream.py#L17) keeps a module-level `router` and `create_stream_router()` decorates the same object on every call. Because `create_app()` calls that factory each time, each new app instance accumulates another `/api/stream/prices` route, and those stale route objects retain the `PriceCache` closure from earlier apps. I verified this by instantiating the app twice and seeing the route count grow from 2 to 3, which means tests and multi-app processes are not isolated.
 
-- High: [`/Users/sfoa6558/pm/finally/.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json#L8-L12) points the plugin source at `./independent-reviewer`, but the actual directory in the working tree is [`/Users/sfoa6558/pm/finally/Independent-reviewer`](../Independent-reviewer). That path is relative to the marketplace file, so it resolves to a non-existent location and will not work on case-sensitive filesystems.
-
-- Medium: [`/Users/sfoa6558/pm/finally/.claude/settings.json`](../.claude/settings.json#L14-L15) removes the previously enabled `frontend-design`, `context7`, and `playwright` plugins and replaces them with only `independent-reviewer@fola-tools`. That regresses the repo's developer tooling, and it drops the Playwright-backed testing support that the project still expects.
-
-- Low: [`/Users/sfoa6558/pm/finally/.claude/commands/deply-changes.md`](../.claude/commands/deply-changes.md#L1) is misspelled and its body says `git hib`. If contributors are expected to use this command, rename it and fix the wording.
+- High: [`app/trading.py`](/Users/sfoa6558/pm/finally/backend/app/trading.py#L20) says trade execution persists the trade, position, and portfolio snapshot as one logical unit, but the implementation calls `users.set_cash_balance()`, `trades.insert_trade()`, and `snapshots.insert_snapshot()` as separate database operations. Any failure after the cash update leaves the account state partially applied, with cash/positions changed but no matching trade log or snapshot, which is a consistency bug for a financial workflow.
 
 ## Notes
 
-- The `README.md` edits are internally consistent with the backend files already present.
+- Verification run: `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q` passed (`181 passed`).

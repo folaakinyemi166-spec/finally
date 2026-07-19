@@ -1,0 +1,31 @@
+# Keep the Docker build context small and avoid baking local artifacts
+# into the image — everything the build needs is regenerated from source.
+
+.git
+.github
+.claude
+.claude-plugin
+Independent-reviewer
+planning
+
+# Backend
+backend/.venv
+backend/__pycache__
+backend/**/__pycache__
+backend/.pytest_cache
+backend/.ruff_cache
+backend/htmlcov
+backend/.coverage
+
+# Frontend
+frontend/node_modules
+frontend/.next
+frontend/out
+frontend/coverage
+
+# Runtime data / secrets — never bake these into the image
+db/*.db
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm
+.env

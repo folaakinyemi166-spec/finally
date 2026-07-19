@@ -1,0 +1,42 @@
+# E2E test infrastructure (PLAN.md §12): spins up the production app image
+# plus a Playwright test-runner container on an isolated network. Browser
+# dependencies never touch the production image — they live only here.
+#
+# Run from the project root:
+#   docker compose -f test/docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from tests
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      # LLM_MOCK=true (PLAN.md §9/§12): deterministic, offline chat responses —
+      # no OPENROUTER_API_KEY needed for E2E.
+      - LLM_MOCK=true
+    # No volume mount: each test run starts from a fresh, empty SQLite db
+    # inside the container — the default-seeded watchlist/$10k cash state
+    # the "fresh start" spec (01) asserts on.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=2)",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  tests:
+    build:
+      context: .
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      - BASE_URL=http://app:8000
+    volumes:
+      - ./playwright-report:/tests/playwright-report
+      - ./test-results:/tests/test-results
