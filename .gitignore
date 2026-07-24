@@ -212,3 +212,6 @@ db/*.db-journal
 db/*.db-wal
 db/*.db-shm
 !db/.gitkeep
+
+# Per-agent private instructions, not meant to be checked in
+CLAUDE.local.md
