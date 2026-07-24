@@ -28,9 +28,7 @@ def conn():
 class TestCreateSchema:
     def test_creates_all_tables(self, conn):
         create_schema(conn)
-        rows = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
-        ).fetchall()
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
         table_names = {row["name"] for row in rows}
         for expected in TABLE_NAMES:
             assert expected in table_names
@@ -38,9 +36,7 @@ class TestCreateSchema:
     def test_rerun_is_noop(self, conn):
         create_schema(conn)
         create_schema(conn)  # Should not raise
-        rows = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
-        ).fetchall()
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
         table_names = [row["name"] for row in rows]
         for expected in TABLE_NAMES:
             assert table_names.count(expected) == 1
@@ -103,24 +99,14 @@ class TestInitDb:
         }
         for expected in TABLE_NAMES:
             assert expected in tables
-        assert (
-            conn.execute("SELECT COUNT(*) AS c FROM users_profile").fetchone()["c"]
-            == 1
-        )
-        assert (
-            conn.execute("SELECT COUNT(*) AS c FROM watchlist").fetchone()["c"] == 10
-        )
+        assert conn.execute("SELECT COUNT(*) AS c FROM users_profile").fetchone()["c"] == 1
+        assert conn.execute("SELECT COUNT(*) AS c FROM watchlist").fetchone()["c"] == 10
 
     def test_rerun_against_populated_db_is_noop(self, conn):
         init_db(conn)
         init_db(conn)
-        assert (
-            conn.execute("SELECT COUNT(*) AS c FROM users_profile").fetchone()["c"]
-            == 1
-        )
-        assert (
-            conn.execute("SELECT COUNT(*) AS c FROM watchlist").fetchone()["c"] == 10
-        )
+        assert conn.execute("SELECT COUNT(*) AS c FROM users_profile").fetchone()["c"] == 1
+        assert conn.execute("SELECT COUNT(*) AS c FROM watchlist").fetchone()["c"] == 10
 
 
 class TestEnsureDb:
@@ -131,16 +117,8 @@ class TestEnsureDb:
         conn = ensure_db(db_path)
         try:
             assert db_path.exists()
-            assert (
-                conn.execute(
-                    "SELECT COUNT(*) AS c FROM users_profile"
-                ).fetchone()["c"]
-                == 1
-            )
-            assert (
-                conn.execute("SELECT COUNT(*) AS c FROM watchlist").fetchone()["c"]
-                == 10
-            )
+            assert conn.execute("SELECT COUNT(*) AS c FROM users_profile").fetchone()["c"] == 1
+            assert conn.execute("SELECT COUNT(*) AS c FROM watchlist").fetchone()["c"] == 10
         finally:
             conn.close()
 
@@ -148,9 +126,7 @@ class TestEnsureDb:
         db_path = tmp_path / "finally.db"
 
         first = ensure_db(db_path)
-        first.execute(
-            "UPDATE users_profile SET cash_balance = 42.0 WHERE id = 'default'"
-        )
+        first.execute("UPDATE users_profile SET cash_balance = 42.0 WHERE id = 'default'")
         first.commit()
         first.close()
 
@@ -160,10 +136,7 @@ class TestEnsureDb:
                 "SELECT cash_balance FROM users_profile WHERE id = 'default'"
             ).fetchone()
             assert row["cash_balance"] == 42.0
-            assert (
-                second.execute("SELECT COUNT(*) AS c FROM watchlist").fetchone()["c"]
-                == 10
-            )
+            assert second.execute("SELECT COUNT(*) AS c FROM watchlist").fetchone()["c"] == 10
         finally:
             second.close()
 
@@ -183,9 +156,7 @@ class TestGetConnection:
         try:
             create_schema(conn)
             seed_default_data(conn)
-            row = conn.execute(
-                "SELECT * FROM users_profile WHERE id = 'default'"
-            ).fetchone()
+            row = conn.execute("SELECT * FROM users_profile WHERE id = 'default'").fetchone()
             assert row["id"] == "default"
         finally:
             conn.close()

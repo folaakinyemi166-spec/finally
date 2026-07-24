@@ -31,6 +31,21 @@ from app.market import PriceCache, PriceUpdate, MarketDataSource, create_market_
 
 - **`create_market_data_source(cache)`** — Factory. Returns `MassiveDataSource` if `MASSIVE_API_KEY` is set, otherwise `SimulatorDataSource`.
 
+## Persistence (SQLite)
+
+The DB layer lives in `app/db/`. Use these imports:
+
+```python
+from app.db import ensure_db, init_db, get_connection, get_db_path
+```
+
+- **`ensure_db(db_path=None) -> sqlite3.Connection`** — Lazy-init entry point for app startup: opens (creating parent dirs as needed) the SQLite file, creates the schema if missing, and seeds default data if the DB is empty. Idempotent — safe to call every startup.
+- **`get_connection(db_path=None) -> sqlite3.Connection`** — Opens a connection with `row_factory = sqlite3.Row` (dict-like column access) and `PRAGMA foreign_keys = ON`. Does not create schema/seed data.
+- **`get_db_path() -> Path`** — Resolves the DB file path: honors the `FINALLY_DB_PATH` env var, else defaults to `<repo root>/db/finally.db`.
+- **`init_db(conn)`** / **`create_schema(conn)`** / **`seed_default_data(conn)`** — Lower-level pieces of `ensure_db`, each idempotent, for callers that already have a connection.
+
+Tables: `users_profile`, `watchlist`, `positions`, `trades`, `portfolio_snapshots`, `chat_messages` — see `app/db/schema.py`. All are scoped by a `user_id` column defaulting to `"default"`. Default seed: cash balance 10000.0, watchlist tickers from `app.market.seed_prices.SEED_PRICES` (the same 10-ticker default watchlist as the market simulator).
+
 ### SSE Streaming
 
 ```python
