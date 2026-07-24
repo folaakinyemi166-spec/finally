@@ -53,7 +53,7 @@ export function PnlChart({ history }: PnlChartProps) {
             domain={["auto", "auto"]}
           />
           <Tooltip
-            formatter={(value: number) => currency.format(value)}
+            formatter={(value) => currency.format(Number(value))}
             contentStyle={{
               backgroundColor: "var(--surface-raised)",
               borderColor: "var(--border)",
