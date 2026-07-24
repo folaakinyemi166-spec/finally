@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { TradeBar } from "@/components/TradeBar";
+import { WatchlistPanel } from "@/components/WatchlistPanel";
 import type { PortfolioOut } from "@/lib/types";
 
 export default function Home() {
   const [portfolio, setPortfolio] = useState<PortfolioOut | null>(null);
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,10 +26,15 @@ export default function Home() {
 
   return (
     <main className="flex flex-1 flex-col gap-6 p-8">
-      <div className="rounded-lg border border-border bg-surface px-8 py-6 text-center">
-        <p className="text-sm text-foreground-muted">
-          Watchlist and chart panels land here.
-        </p>
+      <div className="flex flex-1 gap-4">
+        <WatchlistPanel selectedTicker={selectedTicker} onSelectTicker={setSelectedTicker} />
+        <div className="flex flex-1 items-center justify-center rounded-lg border border-border bg-surface px-8 py-6 text-center">
+          <p className="text-sm text-foreground-muted">
+            {selectedTicker
+              ? `Chart for ${selectedTicker} lands here.`
+              : "Select a ticker to view its chart."}
+          </p>
+        </div>
       </div>
 
       <TradeBar onTradeExecuted={setPortfolio} />
