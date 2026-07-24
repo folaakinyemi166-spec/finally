@@ -55,6 +55,27 @@ router = create_stream_router(price_cache)  # Returns FastAPI APIRouter
 # Endpoint: GET /api/stream/prices (text/event-stream)
 ```
 
+## Portfolio API
+
+The portfolio subsystem lives in `app/portfolio/`. Use these imports:
+
+```python
+from app.portfolio import create_portfolio_router, snapshot_loop
+from app.portfolio import get_portfolio, execute_trade, record_snapshot, get_history
+from app.portfolio import UnknownTickerError, InsufficientCashError, InsufficientSharesError
+```
+
+- **`create_portfolio_router(price_cache, db_path=None) -> APIRouter`** — Factory (same pattern as `create_stream_router`). Registers:
+  - `GET /api/portfolio` — cash balance, positions with live P&L, total value
+  - `POST /api/portfolio/trade` — body `{ticker, side: "buy"|"sell", quantity}`; instant fill at the current `PriceCache` price. Returns 400 on `UnknownTickerError`/`InsufficientCashError`/`InsufficientSharesError`, 422 on schema validation (e.g. non-positive quantity).
+  - `GET /api/portfolio/history` — `{history: [{total_value, recorded_at}, ...]}` oldest first, for the P&L chart
+
+- **`snapshot_loop(price_cache, db_path=None, user_id="default", interval=30.0)`** — Async background task; call `asyncio.create_task(snapshot_loop(price_cache))` from the app lifespan and `task.cancel()` on shutdown. Records a `portfolio_snapshots` row every `interval` seconds (opens a fresh DB connection per tick).
+
+- Core logic in `app/portfolio/service.py` (`get_portfolio`, `execute_trade`, `record_snapshot`, `get_history`) operates on a plain `sqlite3.Connection` + `PriceCache` — useful for calling directly from the AI chat trade-execution flow without going through HTTP.
+
+- Trades: buys average cost across fills; sells reduce quantity and delete the position row once it hits ~0. All validation (unknown ticker, insufficient cash, insufficient shares) happens before any write. Fractional share quantities are supported throughout.
+
 ### Seed Data
 
 Default tickers: AAPL, GOOGL, MSFT, AMZN, TSLA, NVDA, META, JPM, V, NFLX. Seed prices and per-ticker volatility/drift params are in `app/market/seed_prices.py`.
