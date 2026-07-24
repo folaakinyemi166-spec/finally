@@ -80,6 +80,33 @@ from app.portfolio import UnknownTickerError, InsufficientCashError, Insufficien
 
 Default tickers: AAPL, GOOGL, MSFT, AMZN, TSLA, NVDA, META, JPM, V, NFLX. Seed prices and per-ticker volatility/drift params are in `app/market/seed_prices.py`.
 
+## AI Chat API
+
+The chat subsystem lives in `app/ai/`. Use these imports:
+
+```python
+from app.ai import create_chat_router, process_chat, call_llm, LLMResponseError
+```
+
+- **`create_chat_router(price_cache, db_path=None) -> APIRouter`** — Factory (same pattern as the portfolio/watchlist routers). Registers `POST /api/chat`: body `{message}`, response `{message, trades, watchlist_changes}` where `trades`/`watchlist_changes` are the LLM's proposed actions annotated with their execution result (`price` on success, `error` string on failure). A failed/malformed LLM call raises `LLMResponseError`, mapped to HTTP 502 (never a 500).
+
+- **`process_chat(conn, price_cache, user_message, user_id="default") -> ChatResponseOut`** (`app/ai/service.py`) — Loads portfolio + watchlist context and the last 20 `chat_messages` rows, calls the LLM for a structured `{message, trades[], watchlist_changes[]}` response, auto-executes each trade via `app.portfolio.service.execute_trade` and each watchlist change via direct insert/delete — both through the same validation as the manual APIs — then persists the user + assistant turn to `chat_messages` (`actions` column holds the executed-action JSON). Trade/watchlist failures (e.g. insufficient cash) are captured as an `error` string on that action, not raised.
+
+- **`call_llm(messages, user_message) -> LLMChatResponse`** (`app/ai/llm.py`) — LiteLLM → OpenRouter call using the Cerebras inference provider (model `openrouter/openai/gpt-oss-120b`, structured output via `response_format=LLMChatResponse`). Raises `LLMResponseError` on any provider failure or invalid JSON, so callers can degrade gracefully.
+
+### LLM_MOCK
+
+When the `LLM_MOCK` env var is `"true"`, `call_llm` never makes a network call — a small deterministic regex parser stands in for the LLM (for fast/free/reproducible E2E and CI tests). Recognized phrasing (case-insensitive):
+
+```
+buy <qty> <TICKER>            -> trade: buy
+sell <qty> <TICKER>           -> trade: sell   (also accepts "sell <qty> shares of <TICKER>")
+add <TICKER> to [my/the] watchlist     -> watchlist add
+remove <TICKER> from [my/the] watchlist -> watchlist remove
+```
+
+Anything else returns a canned acknowledgement with no actions. Multiple trades/changes in one message are all parsed.
+
 ## Running Tests
 
 ```bash

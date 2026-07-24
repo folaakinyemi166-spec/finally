@@ -1,7 +1,7 @@
 """Tests for chat orchestration: context building, action execution, persistence."""
 
-from app.db.init import DEFAULT_CASH_BALANCE
 from app.ai.service import process_chat
+from app.db.init import DEFAULT_CASH_BALANCE
 
 
 class TestProcessChatNoActions:
